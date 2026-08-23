@@ -3,6 +3,8 @@ package com.placements.job_scheduler.repository;
 import com.placements.job_scheduler.entity.Job;
 import com.placements.job_scheduler.entity.Worker;
 import com.placements.job_scheduler.enums.JobStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -12,6 +14,12 @@ import java.util.Optional;
 public interface JobRepository extends JpaRepository<Job, Long> {
     List<Job> findByQueueId(Long queueId);
     List<Job> findByStatus(JobStatus status);
+
+    Page<Job> findByStatus(JobStatus status, Pageable pageable);
+    Page<Job> findByQueueId(Long queueId, Pageable pageable);
+    Page<Job> findByQueueIdAndStatus(Long queueId,
+                                     JobStatus status,
+                                     Pageable pageable);
 
     // Count running jobs for a queue (for concurrency limit check)
     long countByQueueIdAndStatus(Long queueId, JobStatus status);
