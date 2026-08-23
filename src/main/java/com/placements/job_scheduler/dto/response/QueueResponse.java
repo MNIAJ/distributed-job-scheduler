@@ -1,7 +1,6 @@
 package com.placements.job_scheduler.dto.response;
 
 import com.placements.job_scheduler.enums.QueueStatus;
-import com.placements.job_scheduler.enums.RetryType;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
@@ -15,8 +14,7 @@ public class QueueResponse {
     private Integer priority;
     private Integer concurrencyLimit;
     private QueueStatus status;
-    private Integer maxRetries;
-    private RetryType retryType;
-    private Integer baseDelaySeconds;
+    private Long retryPolicyId;      // just the ID reference
+    private String retryPolicyName;  // for display
     private LocalDateTime createdAt;
 }

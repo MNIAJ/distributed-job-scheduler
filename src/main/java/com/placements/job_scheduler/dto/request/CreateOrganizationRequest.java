@@ -6,10 +6,8 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class CreateQueueRequest {
+public class CreateOrganizationRequest {
     @NotBlank
     private String name;
-    private Integer priority = 5;
-    private Integer concurrencyLimit = 5;
-    private Long retryPolicyId; // optional — link to a RetryPolicy
+    private String description;
 }
