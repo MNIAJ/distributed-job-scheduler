@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Job Scheduler Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; }
+        .header { background: #1e293b; padding: 20px 40px; border-bottom: 1px solid #334155; }
+        .header h1 { font-size: 24px; color: #38bdf8; }
+        .header p { color: #94a3b8; font-size: 14px; margin-top: 4px; }
+        .container { padding: 30px 40px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 30px; }
+        .stat-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+        .stat-card .label { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+        .stat-card .value { font-size: 36px; font-weight: 700; margin-top: 8px; }
+        .queued { color: #38bdf8; }
+        .running { color: #f59e0b; }
+        .completed { color: #22c55e; }
+        .failed { color: #ef4444; }
+        .dead { color: #6b7280; }
+        .idle { color: #22c55e; }
+        .busy { color: #f59e0b; }
+        .section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #cbd5e1; }
+        table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 12px; overflow: hidden; }
+        th { background: #334155; padding: 12px 16px; text-align: left; font-size: 12px; text-transform: uppercase; color: #94a3b8; }
+        td { padding: 12px 16px; border-bottom: 1px solid #334155; font-size: 14px; }
+        tr:last-child td { border-bottom: none; }
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+        .badge-active { background: #166534; color: #22c55e; }
+        .badge-paused { background: #78350f; color: #f59e0b; }
+        .refresh-btn { background: #38bdf8; color: #0f172a; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; float: right; margin-bottom: 20px; }
+        .refresh-btn:hover { background: #0ea5e9; }
+        .login-form { max-width: 400px; margin: 100px auto; background: #1e293b; padding: 40px; border-radius: 16px; }
+        .login-form h2 { margin-bottom: 24px; color: #38bdf8; }
+        .login-form input { width: 100%; padding: 12px; margin-bottom: 16px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 14px; }
+        .login-form button { width: 100%; padding: 12px; background: #38bdf8; color: #0f172a; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 16px; }
+        #dashboard { display: none; }
+        .workers-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 30px; }
+        .worker-card { background: #1e293b; border-radius: 12px; padding: 16px; border: 1px solid #334155; }
+        .worker-card .worker-name { font-weight: 600; margin-bottom: 8px; }
+        .worker-card .worker-status { font-size: 13px; }
+        .dlq-count { background: #ef4444; color: white; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; }
+    </style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="loginScreen">
+    <div class="login-form">
+        <h2>🚀 Job Scheduler</h2>
+        <input type="email" id="email" placeholder="Email" />
+        <input type="password" id="password" placeholder="Password" />
+        <button onclick="login()">Login</button>
+        <p style="color:#94a3b8; font-size:12px; margin-top:16px; text-align:center;">
+            New users: register via POST /api/auth/signup
+        </p>
+        <p id="loginError" style="color:#ef4444; margin-top:12px; font-size:13px;"></p>
+    </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard">
+    <div class="header">
+        <h1>🚀 Job Scheduler Dashboard</h1>
+        <p>Real-time monitoring of jobs, workers, and queues</p>
+    </div>
+
+    <div class="container">
+        <button class="refresh-btn" onclick="loadDashboard()">⟳ Refresh</button>
+
+        <div id="statsGrid" class="stats-grid"></div>
+
+        <div style="margin-bottom: 30px;">
+            <div class="section-title">Workers</div>
+            <div id="workersGrid" class="workers-grid"></div>
+        </div>
+
+        <div style="margin-bottom: 30px;">
+            <div class="section-title">Queue Health</div>
+            <table id="queueTable">
+                <thead>
+                <tr>
+                    <th>Queue</th>
+                    <th>Status</th>
+                    <th>Queued</th>
+                    <th>Running</th>
+                    <th>Completed</th>
+                    <th>Failed</th>
+                </tr>
+                </thead>
+                <tbody id="queueTableBody"></tbody>
+            </table>
+        </div>
+
+        <div>
+            <div class="section-title">
+                Dead Letter Queue
+                <span id="dlqBadge" class="dlq-count" style="margin-left:10px;">0</span>
+            </div>
+            <table>
+                <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>Type</th>
+                    <th>Failure Reason</th>
+                    <th>Attempts</th>
+                    <th>Moved At</th>
+                    <th>Action</th>
+                </tr>
+                </thead>
+                <tbody id="dlqTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    let token = localStorage.getItem('jwt_token');
+    if (token) showDashboard();
+
+    async function login() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            token = data.token;
+            localStorage.setItem('jwt_token', token);
+            showDashboard();
+        } else {
+            document.getElementById('loginError').textContent = 'Invalid credentials';
+        }
+    }
+
+    function showDashboard() {
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('dashboard').style.display = 'block';
+        loadDashboard();
+        // Auto-refresh every 10 seconds
+        setInterval(loadDashboard, 10000);
+    }
+
+    async function loadDashboard() {
+        const headers = { 'Authorization': 'Bearer ' + token };
+
+        // Load stats
+        const statsRes = await fetch('/api/dashboard', { headers });
+        const stats = await statsRes.json();
+        renderStats(stats);
+
+        // Load workers
+        const workersRes = await fetch('/api/workers', { headers });
+        const workers = await workersRes.json();
+        renderWorkers(workers);
+
+        // Load DLQ
+        const dlqRes = await fetch('/api/dlq', { headers });
+        const dlq = await dlqRes.json();
+        renderDLQ(dlq, stats.dlqCount);
+    }
+
+    function renderStats(s) {
+        document.getElementById('statsGrid').innerHTML = `
+            <div class="stat-card"><div class="label">Total Jobs</div>
+                <div class="value">${s.totalJobs}</div></div>
+            <div class="stat-card"><div class="label">Queued</div>
+                <div class="value queued">${s.queuedJobs}</div></div>
+            <div class="stat-card"><div class="label">Running</div>
+                <div class="value running">${s.runningJobs}</div></div>
+            <div class="stat-card"><div class="label">Completed</div>
+                <div class="value completed">${s.completedJobs}</div></div>
+            <div class="stat-card"><div class="label">Failed</div>
+                <div class="value failed">${s.failedJobs}</div></div>
+            <div class="stat-card"><div class="label">Dead (DLQ)</div>
+                <div class="value dead">${s.deadJobs}</div></div>
+        `;
+
+        const queueBody = document.getElementById('queueTableBody');
+        queueBody.innerHTML = s.queueStats.map(q => `
+            <tr>
+                <td>${q.queueName}</td>
+                <td><span class="badge badge-${q.status.toLowerCase()}">${q.status}</span></td>
+                <td class="queued">${q.queued}</td>
+                <td class="running">${q.running}</td>
+                <td class="completed">${q.completed}</td>
+                <td class="failed">${q.failed}</td>
+            </tr>
+        `).join('');
+    }
+
+    function renderWorkers(workers) {
+        document.getElementById('workersGrid').innerHTML = workers.map(w => `
+            <div class="worker-card">
+                <div class="worker-name">⚙️ ${w.name}</div>
+                <div class="worker-status ${w.status.toLowerCase()}">● ${w.status}</div>
+            </div>
+        `).join('');
+    }
+
+    function renderDLQ(dlq, count) {
+        document.getElementById('dlqBadge').textContent = count;
+        document.getElementById('dlqTableBody').innerHTML = dlq.map(d => `
+            <tr>
+                <td>${d.originalJob?.id ?? 'N/A'}</td>
+                <td>${d.jobType}</td>
+                <td style="color:#ef4444">${d.failureReason}</td>
+                <td>${d.totalAttempts}</td>
+                <td>${new Date(d.movedAt).toLocaleString()}</td>
+                <td><button onclick="retryDLQ(${d.id})"
+                    style="background:#22c55e;color:#000;border:none;
+                    padding:6px 12px;border-radius:6px;cursor:pointer;
+                    font-weight:600;">Retry</button></td>
+            </tr>
+        `).join('');
+    }
+
+    async function retryDLQ(id) {
+        await fetch(`/api/dlq/${id}/retry`, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        loadDashboard();
+    }
+</script>
+</body>
+</html>
