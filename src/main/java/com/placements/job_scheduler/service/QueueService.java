@@ -9,6 +9,7 @@ import com.placements.job_scheduler.enums.QueueStatus;
 import com.placements.job_scheduler.exception.ResourceNotFoundException;
 import com.placements.job_scheduler.repository.ProjectRepository;
 import com.placements.job_scheduler.repository.QueueRepository;
+import com.placements.job_scheduler.repository.RetryPolicyRepository;
 import com.placements.job_scheduler.security.CurrentUserProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ public class QueueService {
     private final QueueRepository queueRepository;
     private final ProjectRepository projectRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final RetryPolicyRepository retryPolicyRepository;
 
     public QueueResponse create(Long projectId, CreateQueueRequest request) {
         Project project = getValidatedProject(projectId);
@@ -32,11 +34,14 @@ public class QueueService {
                 .name(request.getName())
                 .priority(request.getPriority())
                 .concurrencyLimit(request.getConcurrencyLimit())
-                .maxRetries(request.getMaxRetries())
-                .retryType(request.getRetryType())
-                .baseDelaySeconds(request.getBaseDelaySeconds())
                 .status(QueueStatus.ACTIVE)
                 .build();
+
+        // Link retry policy if provided
+        if (request.getRetryPolicyId() != null) {
+            retryPolicyRepository.findById(request.getRetryPolicyId())
+                    .ifPresent(queue::setRetryPolicy);
+        }
 
         return toResponse(queueRepository.save(queue));
     }
@@ -91,8 +96,15 @@ public class QueueService {
     }
 
     private QueueResponse toResponse(Queue q) {
-        return new QueueResponse(q.getId(), q.getName(), q.getPriority(),
-                q.getConcurrencyLimit(), q.getStatus(), q.getMaxRetries(),
-                q.getRetryType(), q.getBaseDelaySeconds(), q.getCreatedAt());
+        return new QueueResponse(
+                q.getId(),
+                q.getName(),
+                q.getPriority(),
+                q.getConcurrencyLimit(),
+                q.getStatus(),
+                q.getRetryPolicy() != null ? q.getRetryPolicy().getId() : null,
+                q.getRetryPolicy() != null ? q.getRetryPolicy().getName() : null,
+                q.getCreatedAt()
+        );
     }
 }

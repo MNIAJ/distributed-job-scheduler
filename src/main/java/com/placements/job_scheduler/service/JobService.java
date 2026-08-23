@@ -10,6 +10,8 @@ import com.placements.job_scheduler.exception.ResourceNotFoundException;
 import com.placements.job_scheduler.repository.JobRepository;
 import com.placements.job_scheduler.repository.QueueRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -47,7 +49,8 @@ public class JobService {
                 .priority(request.getPriority())
                 .status(JobStatus.QUEUED)
                 .retryCount(0)
-                .maxRetries(queue.getMaxRetries())
+                .maxRetries(queue.getRetryPolicy() != null
+                        ? queue.getRetryPolicy().getMaxRetries() : 3)
                 .scheduledAt(request.getScheduledAt())
                 .idempotencyKey(request.getIdempotencyKey())
                 .build();
@@ -87,5 +90,17 @@ public class JobService {
                 j.getStatus(), j.getPriority(), j.getRetryCount(),
                 j.getMaxRetries(), j.getScheduledAt(), j.getNextRunAt(),
                 j.getErrorMessage(), j.getCreatedAt(), j.getCompletedAt());
+    }
+
+    public Page<JobResponse> getByStatusPaged(
+            JobStatus status, Pageable pageable) {
+        return jobRepository.findByStatus(status, pageable)
+                .map(this::toResponse);
+    }
+
+    public Page<JobResponse> getByQueuePaged(
+            Long queueId, Pageable pageable) {
+        return jobRepository.findByQueueId(queueId, pageable)
+                .map(this::toResponse);
     }
 }

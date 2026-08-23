@@ -2,11 +2,10 @@ package com.placements.job_scheduler.service;
 
 import com.placements.job_scheduler.entity.*;
 import com.placements.job_scheduler.enums.JobStatus;
+import com.placements.job_scheduler.enums.RetryType;
 import com.placements.job_scheduler.enums.WorkerStatus;
-import com.placements.job_scheduler.repository.DeadLetterQueueRepository;
-import com.placements.job_scheduler.repository.JobExecutionRepository;
-import com.placements.job_scheduler.repository.JobRepository;
-import com.placements.job_scheduler.repository.WorkerRepository;
+import com.placements.job_scheduler.repository.*;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,11 +25,16 @@ public class WorkerService {
     private final WorkerRepository workerRepository;
     private final JobExecutionRepository jobExecutionRepository;
     private final DeadLetterQueueRepository deadLetterQueueRepository;
+    private final JobLogRepository jobLogRepository;
+    private final JobEventPublisher jobEventPublisher;
 
     // Called every 5 seconds — each worker thread tries to claim and run one job
     @Scheduled(fixedDelay = 5000)
     @Transactional
     public void pollAndExecute() {
+
+        if (shuttingDown) return;
+
         // Get all idle workers
         List<Worker> idleWorkers = workerRepository.findByStatus(WorkerStatus.IDLE);
 
@@ -61,8 +65,14 @@ public class WorkerService {
         worker.setStatus(WorkerStatus.BUSY);
         workerRepository.save(worker);
 
-        log.info("Worker [{}] claimed job [{}] of type [{}]",
-                worker.getName(), job.getId(), job.getJobType());
+        jobEventPublisher.publishWorkerUpdate(worker);
+        jobEventPublisher.publishJobUpdate(job);
+
+        logJobEvent(job, worker,
+                "Job claimed by " + worker.getName(), "INFO");
+
+//        log.info("Worker [{}] claimed job [{}] of type [{}]",
+//                worker.getName(), job.getId(), job.getJobType());
 
         return Optional.of(job);
     }
@@ -94,8 +104,14 @@ public class WorkerService {
             execution.setFinishedAt(LocalDateTime.now());
             jobExecutionRepository.save(execution);
 
-            log.info("Job [{}] completed successfully by worker [{}]",
-                    job.getId(), worker.getName());
+            jobEventPublisher.publishJobUpdate(job);
+            jobEventPublisher.publishWorkerUpdate(worker);
+
+            logJobEvent(job, worker,
+                    "Job completed successfully", "INFO");
+
+//            log.info("Job [{}] completed successfully by worker [{}]",
+//                    job.getId(), worker.getName());
 
         } catch (Exception e) {
             log.error("Job [{}] failed: {}", job.getId(), e.getMessage());
@@ -134,6 +150,8 @@ public class WorkerService {
         execution.setErrorMessage(errorMessage);
         jobExecutionRepository.save(execution);
 
+        jobEventPublisher.publishJobUpdate(job);
+
         if (job.getRetryCount() >= job.getMaxRetries()) {
             // Max retries exceeded — send to Dead Letter Queue
             moveToDeadLetterQueue(job, errorMessage);
@@ -152,16 +170,16 @@ public class WorkerService {
     private LocalDateTime calculateNextRunAt(Job job) {
         Queue queue = job.getQueue();
         int attempt = job.getRetryCount();
-        int baseDelay = queue.getBaseDelaySeconds();
+        int baseDelay = queue.getRetryPolicy() != null ? queue.getRetryPolicy().getBaseDelaySeconds() : 30;
 
-        long delaySeconds = switch (queue.getRetryType()) {
+        long delaySeconds = switch (queue.getRetryPolicy() != null ? queue.getRetryPolicy().getRetryType() : RetryType.EXPONENTIAL) {
             case FIXED -> baseDelay;
             case LINEAR -> (long) baseDelay * attempt;
             case EXPONENTIAL -> (long) baseDelay * (long) Math.pow(2, attempt - 1);
         };
 
         log.info("Job [{}] retry delay: {} seconds (strategy: {})",
-                job.getId(), delaySeconds, queue.getRetryType());
+                job.getId(), delaySeconds, queue.getRetryPolicy() != null ? queue.getRetryPolicy().getRetryType() : RetryType.EXPONENTIAL);
 
         return LocalDateTime.now().plusSeconds(delaySeconds);
     }
@@ -183,5 +201,38 @@ public class WorkerService {
 
         log.warn("Job [{}] moved to Dead Letter Queue after {} attempts",
                 job.getId(), job.getRetryCount());
+    }
+
+    private void logJobEvent(Job job, Worker worker,
+                             String message, String level) {
+        JobLog log = JobLog.builder()
+                .job(job)
+                .worker(worker)
+                .message(message)
+                .logLevel(level)
+                .build();
+        jobLogRepository.save(log);
+    }
+
+    private volatile boolean shuttingDown = false;
+
+    @PreDestroy
+    public void onShutdown() {
+        shuttingDown = true;
+        log.info("Graceful shutdown initiated — stopping job polling");
+
+        long waitUntil = System.currentTimeMillis() + 30_000;
+        while (System.currentTimeMillis() < waitUntil) {
+            long running = workerRepository
+                    .countByStatus(WorkerStatus.BUSY);
+            if (running == 0) break;
+            log.info("Waiting for {} running jobs to finish...", running);
+            try { Thread.sleep(2000); }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        log.info("Graceful shutdown complete");
     }
 }

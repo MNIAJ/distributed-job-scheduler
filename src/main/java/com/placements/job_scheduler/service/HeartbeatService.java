@@ -2,12 +2,15 @@ package com.placements.job_scheduler.service;
 
 import com.placements.job_scheduler.entity.Job;
 import com.placements.job_scheduler.entity.Worker;
+import com.placements.job_scheduler.entity.WorkerHeartbeat;
 import com.placements.job_scheduler.enums.JobStatus;
 import com.placements.job_scheduler.enums.WorkerStatus;
 import com.placements.job_scheduler.repository.JobRepository;
+import com.placements.job_scheduler.repository.WorkerHeartbeatRepository;
 import com.placements.job_scheduler.repository.WorkerRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,8 +25,9 @@ public class HeartbeatService {
 
     private final WorkerRepository workerRepository;
     private final JobRepository jobRepository;
+    @Autowired
+    private WorkerHeartbeatRepository heartbeatRepository;
 
-    // Update heartbeat every 30 seconds
     @Scheduled(fixedDelay = 30000)
     @Transactional
     public void updateHeartbeats() {
@@ -33,6 +37,14 @@ public class HeartbeatService {
         activeWorkers.forEach(worker -> {
             worker.setLastHeartbeatAt(LocalDateTime.now());
             workerRepository.save(worker);
+
+            // Save heartbeat record to history table
+            WorkerHeartbeat heartbeat = WorkerHeartbeat.builder()
+                    .worker(worker)
+                    .status(worker.getStatus())
+                    .recordedAt(LocalDateTime.now())
+                    .build();
+            heartbeatRepository.save(heartbeat);
         });
     }
 
