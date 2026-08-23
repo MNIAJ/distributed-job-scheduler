@@ -1,7 +1,6 @@
 package com.placements.job_scheduler.entity;
 
 import com.placements.job_scheduler.enums.QueueStatus;
-import com.placements.job_scheduler.enums.RetryType;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -39,16 +38,9 @@ public class Queue {
     @Column(nullable = false)
     private QueueStatus status = QueueStatus.ACTIVE;
 
-    // Retry config stored directly on queue for simplicity
-    @Column(name = "max_retries", nullable = false)
-    private Integer maxRetries = 3;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "retry_type", nullable = false)
-    private RetryType retryType = RetryType.EXPONENTIAL;
-
-    @Column(name = "base_delay_seconds", nullable = false)
-    private Integer baseDelaySeconds = 30;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "retry_policy_id")
+    private RetryPolicy retryPolicy;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
