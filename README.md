@@ -106,20 +106,23 @@ docker compose up --build
 
 ### 4. Default Admin
 
+```properties
 Email:
 admin@jobscheduler.com
 
 Password:
 Admin@123
+```
 
 ### 5. Access
 
+```properties
 Dashboard:
 http://localhost:8080/dashboard.html
 
 Swagger:
 http://localhost:8080/swagger-ui.html
-
+```
 
 ### Option 2: Local Development
 - Java 21+
