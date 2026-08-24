@@ -6,7 +6,7 @@ A production-style distributed job scheduling system built with Java Spring Boot
 
 ## System Architecture
 
-![Architecture](docs/architecture_v2 (1).png)
+![Architecture](docs/architecture_v2.png)
 
 The system is built in clean layers:
 
