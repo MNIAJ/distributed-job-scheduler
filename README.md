@@ -125,6 +125,7 @@ http://localhost:8080/dashboard.html
 Swagger:
 http://localhost:8080/swagger-ui.html
 ```
+
 ```properties
 ### Option 2: Local Development
 ```
