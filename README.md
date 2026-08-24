@@ -83,7 +83,9 @@ Stuck job recovery: if a RUNNING job's worker goes silent for 2+ minutes, the St
 
 ## Setup
 
+```properties
 ### Option 1: Docker (Reccommended)
+```
 
 ### 1. Clone
 
@@ -123,8 +125,10 @@ http://localhost:8080/dashboard.html
 Swagger:
 http://localhost:8080/swagger-ui.html
 ```
-
+```properties
 ### Option 2: Local Development
+```
+
 - Java 21+
 - PostgreSQL 14+
 - Maven 3.8+
