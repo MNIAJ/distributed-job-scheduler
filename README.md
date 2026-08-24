@@ -22,7 +22,7 @@ The system is built in clean layers:
 
 ## Database Design
 
-![ER Diagram](docs/er_diagram_v2.png)
+![ER Diagram](docs/er_diagram.png)
 
 ### Schema overview
 
