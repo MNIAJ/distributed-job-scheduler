@@ -83,28 +83,28 @@ Stuck job recovery: if a RUNNING job's worker goes silent for 2+ minutes, the St
 
 ## Setup
 
-### Option 1: Docker (Recommended)
+### Option 1: Docker (Reccommended)
 
-#### Clone
+### 1. Clone
 
 ```bash
 git clone <repo-url>
 cd job-scheduler
 ```
 
-#### Configure
+### 2. Configure
 
 ```bash
 cp .env.example .env
 ```
 
-#### Run
+### 3. Run
 
 ```bash
 docker compose up --build
 ```
 
-#### Default Admin
+### 4. Default Admin
 
 Email:
 admin@jobscheduler.com
@@ -112,7 +112,7 @@ admin@jobscheduler.com
 Password:
 Admin@123
 
-#### Access
+### 5. Access
 
 Dashboard:
 http://localhost:8080/dashboard.html
