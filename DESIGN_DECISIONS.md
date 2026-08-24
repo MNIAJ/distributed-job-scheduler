@@ -1,125 +1,93 @@
 # Design Decisions
 
+Eight major trade-offs made during the design of this system, with the reasoning behind each.
+
+---
+
 ## 1. PostgreSQL over MySQL
 
-**Decision:** Use PostgreSQL as the primary database.
+**Decision:** PostgreSQL as the primary database.
 
-**Reason:** This assignment is fundamentally about reliable concurrent job
-execution. PostgreSQL's `FOR UPDATE SKIP LOCKED` provides native row-level
-locking that makes atomic job claiming trivial to implement correctly.
+**Reason:** The core challenge of this assignment is reliable concurrent job execution. PostgreSQL's `FOR UPDATE SKIP LOCKED` provides native row-level locking that makes atomic job claiming a single SQL statement. MySQL added `SKIP LOCKED` later and its behaviour is less predictable for this exact pattern. The decision was PostgreSQL-first from day one — not as a preference but as the right tool for the concurrency problem.
 
-MySQL supports `FOR UPDATE` but `SKIP LOCKED` was added later and behaves
-differently. PostgreSQL's implementation is more mature and predictable for
-this exact use case.
-
-**Tradeoff:** Slightly more setup complexity vs MySQL familiarity.
-Worth it for correctness guarantees.
+**Trade-off:** Slightly more setup than MySQL. Worth it for correctness guarantees.
 
 ---
 
-## 2. Database Polling over Message Queues
+## 2. Database polling over message queues
 
-**Decision:** Workers poll PostgreSQL every 5 seconds instead of using
-Kafka, RabbitMQ, or Redis queues.
+**Decision:** Workers poll PostgreSQL every 5 seconds rather than using Kafka, RabbitMQ, or Redis.
 
-**Reason:**
-- Zero additional infrastructure — no separate message broker to deploy
-- Full observability — every job's state is always visible in the DB
-- Simpler failure recovery — stuck jobs are just rows with a status field
-- Transactional claiming — job claim and status update happen atomically
+**Reasons:**
+- Zero additional infrastructure — no message broker to deploy, monitor, or operate
+- Full observability — every job's state is always a SQL query away
+- Simpler failure recovery — stuck jobs are just rows with stale status
+- Transactional claiming — job lock and status update happen in one atomic operation
 
-**Tradeoff:** Higher database load at scale vs push-based systems.
-At millions of jobs/second, a message queue would be more efficient.
-At this scale, polling is simpler and more observable.
+**Trade-off:** Higher database load at very high scale. At millions of jobs per second, a push-based message queue wins on throughput. At this scale, polling is simpler, more observable, and more maintainable.
 
-**Industry precedent:** Sidekiq (Ruby), Delayed::Job, and many production
-systems use this exact pattern successfully.
+**Industry precedent:** Sidekiq, Delayed::Job, and Faktory all use this approach successfully in production.
 
 ---
 
-## 3. Retry Policy on Queue, Not a Separate Table
+## 3. RetryPolicy as a separate table
 
-**Decision:** Store max_retries, retry_type, and base_delay_seconds
-directly on the Queue entity.
+**Decision:** Retry configuration (`max_retries`, `retry_type`, `base_delay_seconds`) stored in a `retry_policies` table, not inline on the queue.
 
-**Reason:** All jobs in a queue share the same retry behavior by design.
-A separate RetryPolicy table would add a join to every job claim query
-without adding real flexibility — you'd still need one policy per queue.
+**Reason:** Retry policies are reusable configuration. Multiple queues may share the same retry behaviour. A separate table means you define the policy once and reference it — no duplication, and changing a policy updates all queues that use it.
 
-**Tradeoff:** Less flexible if you later need per-job retry policies.
-Acceptable for this use case where queue-level configuration is the right
-abstraction.
+**Trade-off:** One extra join on every queue read. Negligible at this scale, worth it for maintainability.
 
 ---
 
-## 4. Simulating Multiple Workers in One JVM
+## 4. Workers as threads in one JVM, not separate services
 
-**Decision:** Run 3 worker threads inside the same Spring Boot application
-instead of deploying separate worker services.
+**Decision:** Three worker threads inside the same Spring Boot application, not separate deployable services.
 
-**Reason:** The concurrency problem is identical whether workers are in
-one JVM or across 10 machines — the database is the coordination point.
-`FOR UPDATE SKIP LOCKED` works the same way in both cases.
+**Reason:** The concurrency guarantee comes from the database locking, not from network topology. Whether workers are threads in one JVM or processes across ten machines, `FOR UPDATE SKIP LOCKED` works identically — the database is the coordination point.
 
-This approach demonstrates the distributed systems concept correctly while
-keeping deployment simple for an assignment context.
+This demonstrates the distributed systems concept correctly while keeping deployment simple.
 
-**Tradeoff:** In production, workers would be separate deployable services
-that scale independently. The architectural change needed: extract
-WorkerService into its own Spring Boot app pointing to the same DB.
+**Production path:** To scale out, extract `WorkerService` into a separate Spring Boot app pointing at the same database. The locking logic is unchanged — you just have more pollers.
 
 ---
 
-## 5. JWT over Sessions
+## 5. JWT over server-side sessions
 
-**Decision:** Stateless JWT authentication instead of server-side sessions.
+**Decision:** Stateless JWT authentication.
 
-**Reason:** Workers and dashboard clients send programmatic API requests,
-not browser-based sessions. JWT tokens work uniformly across all clients
-without server-side session storage.
+**Reason:** Workers and the dashboard are programmatic API clients — they make HTTP requests with tokens, not browser sessions. JWT works uniformly across all clients without server-side session storage. Stateless also means the app scales horizontally without session affinity.
 
-**Tradeoff:** Tokens cannot be invalidated before expiry without a
-token blacklist. Acceptable for this use case — set short expiry (24h).
+**Trade-off:** Tokens cannot be revoked before expiry without a blacklist. Mitigated by short expiry (24h) and the low-risk nature of the system.
 
 ---
 
-## 6. Single Responsibility: CustomUserDetailsService
+## 6. CustomUserDetailsService separated from AuthService
 
-**Decision:** Separate CustomUserDetailsService from AuthService instead
-of implementing UserDetailsService directly in AuthService.
+**Decision:** Spring Security's `UserDetailsService` contract implemented in a dedicated `CustomUserDetailsService`, not mixed into `AuthService`.
 
-**Reason:** AuthService handles business logic (signup, login, token
-generation). Spring Security's UserDetailsService contract is an
-infrastructure concern. Mixing them creates a circular bean dependency:
-SecurityConfig → JwtAuthFilter → AuthService → PasswordEncoder → SecurityConfig.
-
-Separating them eliminates the cycle and gives each class one clear job.
+**Reason:** `AuthService` handles business logic — signup, login, token generation. `CustomUserDetailsService` handles an infrastructure concern — loading users during JWT filter validation. Combining them creates a circular bean dependency: `SecurityConfig → JwtAuthFilter → AuthService → PasswordEncoder → SecurityConfig`. Separating them eliminates the cycle and gives each class one clear responsibility.
 
 ---
 
-## 7. Idempotency Keys on Jobs
+## 7. Idempotency keys on jobs
 
-**Decision:** Optional idempotency_key field with a unique constraint.
+**Decision:** Optional `idempotency_key` field with a unique constraint on the `jobs` table.
 
-**Reason:** Clients may retry job submission requests on network timeout.
-Without idempotency keys, this creates duplicate jobs. With the unique
-constraint, the second submission returns the existing job silently.
+**Reason:** API clients often retry requests on network timeout. Without idempotency keys, a retry creates a duplicate job. With the unique constraint, the second submission silently returns the existing job — the client gets the correct response and no duplicate work is executed.
 
-**Tradeoff:** Clients must generate and track their own keys.
-Worth it to prevent silent duplicate work.
+**Trade-off:** Clients must generate and manage their own keys. Acceptable — the system can't generate meaningful idempotency keys without knowing the client's intent.
 
 ---
 
-## 8. Dead Letter Queue as a Separate Table
+## 8. Dead Letter Queue as a separate table
 
-**Decision:** Move permanently failed jobs to a dead_letter_queue table
-rather than leaving them in the jobs table with status=DEAD.
+**Decision:** Permanently failed jobs moved to a `dead_letter_queue` table rather than left in `jobs` with status DEAD.
 
-**Reason:**
-- Keeps the jobs table clean for active work
-- DLQ entries have additional metadata (failure_reason, moved_at)
-- Enables separate monitoring and alerting for DLQ
-- Manual retry from DLQ is a distinct operation from normal job retry
+**Reasons:**
+- Keeps the `jobs` table focused on active work — no permanently dead rows clogging queries
+- DLQ entries carry extra metadata: `failure_reason`, `moved_at`, `total_attempts`
+- Enables separate monitoring, alerting, and manual retry workflows
+- A job in the DLQ is a different concept from a job that failed — it deserves its own home
 
-**Tradeoff:** Slightly more complex retry logic (must delete from DLQ
-and reset the original job). Worth it for observability.
+**Trade-off:** Manual retry requires deleting from DLQ and resetting the original job. A small amount of complexity for meaningful operational clarity.
