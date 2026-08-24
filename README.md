@@ -1,6 +1,6 @@
-# Distributed Job Scheduler
+# Distributed Job Scheduler (Spring Boot + PostgreSQL + Docker)
 
-A production-style distributed job scheduling system built with Java Spring Boot and PostgreSQL. Supports background job execution, cron-based recurring jobs, real-time monitoring, retry logic with configurable backoff, dead letter queue, and live WebSocket updates.
+A production-style distributed job scheduling system built with Java Spring Boot and PostgreSQL. Supports background job execution, cron-based recurring jobs, real-time monitoring, retry logic with configurable backoff, dead letter queue, and live WebSocket updates. The application is fully Dockerized using Docker Compose for one-command deployment of both the Spring Boot application and PostgreSQL database.
 
 ---
 
@@ -83,7 +83,45 @@ Stuck job recovery: if a RUNNING job's worker goes silent for 2+ minutes, the St
 
 ## Setup
 
-### Prerequisites
+### Option 1: Docker (Recommended)
+
+#### Clone
+
+```bash
+git clone <repo-url>
+cd job-scheduler
+```
+
+#### Configure
+
+```bash
+cp .env.example .env
+```
+
+#### Run
+
+```bash
+docker compose up --build
+```
+
+#### Default Admin
+
+Email:
+admin@jobscheduler.com
+
+Password:
+Admin@123
+
+#### Access
+
+Dashboard:
+http://localhost:8080/dashboard.html
+
+Swagger:
+http://localhost:8080/swagger-ui.html
+
+
+### Option 2: Local Development
 - Java 21+
 - PostgreSQL 14+
 - Maven 3.8+
@@ -114,6 +152,20 @@ jwt.expiration=86400000
 | `http://localhost:8080/dashboard.html` | Live monitoring dashboard |
 | `http://localhost:8080/swagger-ui/index.html` | Interactive API docs |
 | `http://localhost:8080/api` | REST API base |
+
+---
+
+## Environment Variables
+
+The project uses environment variables for configuration.
+
+Copy:
+
+```bash
+cp .env.example .env
+```
+
+Update the values inside `.env` if needed.
 
 ---
 

@@ -91,3 +91,13 @@ This demonstrates the distributed systems concept correctly while keeping deploy
 - A job in the DLQ is a different concept from a job that failed — it deserves its own home
 
 **Trade-off:** Manual retry requires deleting from DLQ and resetting the original job. A small amount of complexity for meaningful operational clarity.
+
+---
+
+## 9. Environment Variables over Hardcoded Configuration
+
+**Decision:** Externalized configuration using `.env` and Docker environment variables.
+
+**Reason:** Database credentials, JWT configuration, and server settings should not be hardcoded in the application. Environment variables make the project portable across local development, Docker, and production deployments without changing the source code.
+
+**Trade-off:** Slightly more setup for first-time users, but significantly better security and deployment flexibility.
