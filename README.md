@@ -6,7 +6,7 @@ A production-style distributed job scheduling system built with Java Spring Boot
 
 ## System Architecture
 
-![Architecture](docs/architecture_v2.png)
+![Architecture](docs/architecture_job_scheduler.png)
 
 The system is built in clean layers:
 
@@ -52,7 +52,7 @@ The system is built in clean layers:
 
 ## Job Lifecycle
 
-![Job Lifecycle](docs/job_lifecycle_v2.png)
+![Job Lifecycle](docs/job_life_cycle.png)
 
 ```
 QUEUED → SCHEDULED → CLAIMED → RUNNING → COMPLETED
