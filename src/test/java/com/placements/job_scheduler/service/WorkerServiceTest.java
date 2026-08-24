@@ -36,6 +36,9 @@ class WorkerServiceTest {
     @Autowired
     private WorkerRepository workerRepository;
 
+    @Autowired
+    private RetryPolicyRepository retryPolicyRepository;
+
     private Queue testQueue;
     private Worker testWorker;
 
@@ -50,14 +53,19 @@ class WorkerServiceTest {
         Project project = projectRepository.save(Project.builder()
                 .user(user).name("Test Project").build());
 
+        RetryPolicy retryPolicy = retryPolicyRepository.save(RetryPolicy.builder()
+                .name("test-policy")
+                .maxRetries(3)
+                .retryType(RetryType.EXPONENTIAL)
+                .baseDelaySeconds(30)
+                .build());
+
         testQueue = queueRepository.save(Queue.builder()
                 .project(project)
                 .name("test-queue")
                 .priority(5)
                 .concurrencyLimit(3)
-                .maxRetries(3)
-                .retryType(RetryType.EXPONENTIAL)
-                .baseDelaySeconds(30)
+                .retryPolicy(retryPolicy)
                 .status(QueueStatus.ACTIVE)
                 .build());
 

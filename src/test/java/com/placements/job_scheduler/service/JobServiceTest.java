@@ -4,14 +4,12 @@ import com.placements.job_scheduler.dto.request.CreateJobRequest;
 import com.placements.job_scheduler.dto.response.JobResponse;
 import com.placements.job_scheduler.entity.Project;
 import com.placements.job_scheduler.entity.Queue;
+import com.placements.job_scheduler.entity.RetryPolicy;
 import com.placements.job_scheduler.entity.User;
 import com.placements.job_scheduler.enums.JobStatus;
 import com.placements.job_scheduler.enums.QueueStatus;
 import com.placements.job_scheduler.enums.RetryType;
-import com.placements.job_scheduler.repository.JobRepository;
-import com.placements.job_scheduler.repository.ProjectRepository;
-import com.placements.job_scheduler.repository.QueueRepository;
-import com.placements.job_scheduler.repository.UserRepository;
+import com.placements.job_scheduler.repository.*;
 import org.junit.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +39,9 @@ class JobServiceTest {
 
     private Queue testQueue;
 
+    @Autowired
+    private RetryPolicyRepository retryPolicyRepository;
+
     @BeforeEach
     void setUp() {
         User user = userRepository.save(User.builder()
@@ -54,14 +55,19 @@ class JobServiceTest {
                 .name("Test Project")
                 .build());
 
+        RetryPolicy retryPolicy = retryPolicyRepository.save(RetryPolicy.builder()
+                .name("test-policy")
+                .maxRetries(3)
+                .retryType(RetryType.EXPONENTIAL)
+                .baseDelaySeconds(30)
+                .build());
+
         testQueue = queueRepository.save(Queue.builder()
                 .project(project)
                 .name("test-queue")
                 .priority(5)
                 .concurrencyLimit(3)
-                .maxRetries(3)
-                .retryType(RetryType.EXPONENTIAL)
-                .baseDelaySeconds(30)
+                .retryPolicy(retryPolicy)
                 .status(QueueStatus.ACTIVE)
                 .build());
     }
