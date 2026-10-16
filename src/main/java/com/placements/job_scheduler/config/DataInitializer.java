@@ -16,25 +16,27 @@ public class DataInitializer implements CommandLineRunner {
     private static final Logger log =
             LoggerFactory.getLogger(DataInitializer.class);
 
+    private static final String ADMIN_EMAIL = "admin@jobscheduler.com";
+    private static final String ADMIN_PASSWORD = "Admin@123";
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
     public void run(String... args) {
 
-        if (userRepository.findByEmail("admin@example.com").isEmpty()) {
+        // Check for the SAME email we are about to create
+        if (userRepository.findByEmail(ADMIN_EMAIL).isEmpty()) {
 
             User admin = User.builder()
                     .name("Admin")
-                    .email("admin@jobscheduler.com")
-                    .password(passwordEncoder.encode("admin123"))
+                    .email(ADMIN_EMAIL)
+                    .password(passwordEncoder.encode(ADMIN_PASSWORD))
                     .build();
 
             userRepository.save(admin);
 
-            log.info("Default Admin User Created");
-            log.info("Email    : admin@jobscheduler.com");
-            log.info("Password : Admin@123");
+            log.info("Default admin user created: {}", ADMIN_EMAIL);
         }
     }
 }
