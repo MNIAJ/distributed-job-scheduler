@@ -29,6 +29,11 @@ public class Worker {
     @Column(name = "last_heartbeat_at")
     private LocalDateTime lastHeartbeatAt;
 
+
+    // Which app instance (JVM) owns this worker; set at registration
+    @Column(name = "instance_id")
+    private String instanceId;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
