@@ -5,17 +5,17 @@ import com.placements.job_scheduler.entity.Job;
 import com.placements.job_scheduler.entity.Queue;
 import com.placements.job_scheduler.entity.ScheduledJob;
 import com.placements.job_scheduler.enums.JobStatus;
-import com.placements.job_scheduler.exception.ResourceNotFoundException;
 import com.placements.job_scheduler.repository.JobRepository;
-import com.placements.job_scheduler.repository.QueueRepository;
 import com.placements.job_scheduler.repository.ScheduledJobRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @Service
@@ -25,14 +25,15 @@ public class CronSchedulerService {
 
     private final ScheduledJobRepository scheduledJobRepository;
     private final JobRepository jobRepository;
-    private final QueueRepository queueRepository;
+    private final TenantAccessService tenantAccessService;
 
     // Check every minute if any cron job is due
     @Scheduled(fixedDelay = 60000)
     @Transactional
     public void spawnDueJobs() {
+        // Locks the due rows until this transaction commits (SKIP LOCKED)
         List<ScheduledJob> dueJobs = scheduledJobRepository
-                .findByIsActiveTrueAndNextRunAtBefore(LocalDateTime.now());
+                .findDueForUpdateSkipLocked();
 
         for (ScheduledJob scheduledJob : dueJobs) {
             // Create a real job from the template
@@ -63,23 +64,16 @@ public class CronSchedulerService {
     }
 
     private LocalDateTime calculateNextRun(String cronExpression) {
-        // Simple implementation: for common patterns
-        // In production, use CronExpression from Spring
-        return org.springframework.scheduling.support
-                .CronExpression.parse(cronExpression)
-                .next(java.time.ZonedDateTime.now())
+        return CronExpression.parse(cronExpression)
+                .next(ZonedDateTime.now())
                 .toLocalDateTime();
     }
 
     public ScheduledJob create(CreateScheduledJobRequest request) {
-        Queue queue = queueRepository.findById(request.getQueueId())
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("Queue not found"));
+        // 404 if the queue does not exist, 403 if it belongs to someone else
+        Queue queue = tenantAccessService.requireOwnedQueue(request.getQueueId());
 
-        LocalDateTime firstRun = org.springframework.scheduling.support
-                .CronExpression.parse(request.getCronExpression())
-                .next(java.time.ZonedDateTime.now())
-                .toLocalDateTime();
+        LocalDateTime firstRun = calculateNextRun(request.getCronExpression());
 
         ScheduledJob scheduledJob = ScheduledJob.builder()
                 .queue(queue)
@@ -92,5 +86,17 @@ public class CronSchedulerService {
                 .build();
 
         return scheduledJobRepository.save(scheduledJob);
+    }
+
+    // Only this user's schedules
+    public List<ScheduledJob> getAllForCurrentUser() {
+        return scheduledJobRepository.findAllForUser(tenantAccessService.currentUserId());
+    }
+
+    @Transactional
+    public void deactivate(Long id) {
+        ScheduledJob scheduledJob = tenantAccessService.requireOwnedScheduledJob(id);
+        scheduledJob.setIsActive(false);
+        scheduledJobRepository.save(scheduledJob);
     }
 }
