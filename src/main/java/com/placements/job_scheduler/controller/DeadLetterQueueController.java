@@ -1,17 +1,15 @@
 package com.placements.job_scheduler.controller;
 
 import com.placements.job_scheduler.entity.DeadLetterQueue;
-import com.placements.job_scheduler.entity.Job;
-import com.placements.job_scheduler.enums.JobStatus;
-import com.placements.job_scheduler.exception.ResourceNotFoundException;
-import com.placements.job_scheduler.repository.DeadLetterQueueRepository;
-import com.placements.job_scheduler.repository.JobRepository;
+import com.placements.job_scheduler.service.DeadLetterQueueService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -20,32 +18,17 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DeadLetterQueueController {
 
-    private final DeadLetterQueueRepository dlqRepository;
-    private final JobRepository jobRepository;
+    private final DeadLetterQueueService dlqService;
 
     @GetMapping
     public ResponseEntity<List<DeadLetterQueue>> getAll() {
-        return ResponseEntity.ok(dlqRepository.findAll());
+        return ResponseEntity.ok(dlqService.getAllForCurrentUser());
     }
 
     @PostMapping("/{id}/retry")
-    @Transactional
     public ResponseEntity<Map<String, String>> retry(@PathVariable Long id) {
-        DeadLetterQueue dlqEntry = dlqRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("DLQ entry not found"));
-
-        // Reset the original job and put it back in queue
-        Job job = dlqEntry.getOriginalJob();
-        job.setStatus(JobStatus.QUEUED);
-        job.setRetryCount(0);
-        job.setErrorMessage(null);
-        job.setNextRunAt(LocalDateTime.now());
-        jobRepository.save(job);
-
-        // Remove from DLQ
-        dlqRepository.delete(dlqEntry);
-
+        Long jobId = dlqService.retry(id);
         return ResponseEntity.ok(Map.of("message",
-                "Job " + job.getId() + " re-queued successfully"));
+                "Job " + jobId + " re-queued successfully"));
     }
 }

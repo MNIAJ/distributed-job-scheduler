@@ -6,14 +6,10 @@ import com.placements.job_scheduler.dto.response.JobResponse;
 import com.placements.job_scheduler.entity.JobLog;
 import com.placements.job_scheduler.entity.ScheduledJob;
 import com.placements.job_scheduler.enums.JobStatus;
-import com.placements.job_scheduler.exception.ResourceNotFoundException;
-import com.placements.job_scheduler.repository.JobLogRepository;
-import com.placements.job_scheduler.repository.ScheduledJobRepository;
 import com.placements.job_scheduler.service.CronSchedulerService;
 import com.placements.job_scheduler.service.JobService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -31,15 +27,7 @@ import java.util.stream.Collectors;
 public class JobController {
 
     private final JobService jobService;
-
-    @Autowired
-    private JobLogRepository jobLogRepository;
-
-    @Autowired
-    private CronSchedulerService cronSchedulerService;
-
-    @Autowired
-    private ScheduledJobRepository scheduledJobRepository;
+    private final CronSchedulerService cronSchedulerService;
 
     @PostMapping("/scheduled")
     public ResponseEntity<ScheduledJob> createScheduled(
@@ -49,25 +37,20 @@ public class JobController {
 
     @GetMapping("/scheduled")
     public ResponseEntity<List<ScheduledJob>> getAllScheduled() {
-        return ResponseEntity.ok(scheduledJobRepository.findAll());
+        return ResponseEntity.ok(cronSchedulerService.getAllForCurrentUser());
     }
 
     @PutMapping("/scheduled/{id}/deactivate")
     public ResponseEntity<Map<String, String>> deactivateScheduled(
             @PathVariable Long id) {
-        ScheduledJob sj = scheduledJobRepository.findById(id)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("Scheduled job not found"));
-        sj.setIsActive(false);
-        scheduledJobRepository.save(sj);
+        cronSchedulerService.deactivate(id);
         return ResponseEntity.ok(
                 Map.of("message", "Scheduled job deactivated"));
     }
 
     @GetMapping("/{id}/logs")
     public ResponseEntity<List<JobLog>> getJobLogs(@PathVariable Long id) {
-        return ResponseEntity.ok(
-                jobLogRepository.findByJobIdOrderByCreatedAtAsc(id));
+        return ResponseEntity.ok(jobService.getLogs(id));
     }
 
     @PostMapping

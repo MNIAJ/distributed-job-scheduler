@@ -8,17 +8,23 @@ import com.placements.job_scheduler.entity.RetryPolicy;
 import com.placements.job_scheduler.enums.JobStatus;
 import com.placements.job_scheduler.enums.QueueStatus;
 import com.placements.job_scheduler.enums.RetryType;
+import com.placements.job_scheduler.exception.ForbiddenException;
 import com.placements.job_scheduler.exception.ResourceNotFoundException;
 import com.placements.job_scheduler.repository.JobRepository;
-import com.placements.job_scheduler.repository.QueueRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,7 +35,7 @@ import static org.mockito.Mockito.*;
 class JobServiceUnitTest {
 
     @Mock private JobRepository jobRepository;
-    @Mock private QueueRepository queueRepository;
+    @Mock private TenantAccessService tenantAccessService;
 
     @InjectMocks private JobService jobService;
 
@@ -58,7 +64,6 @@ class JobServiceUnitTest {
 
     @Test
     void shouldCreateJobSuccessfully() {
-        // Arrange
         CreateJobRequest request = new CreateJobRequest();
         request.setQueueId(1L);
         request.setJobType("EMAIL");
@@ -77,13 +82,11 @@ class JobServiceUnitTest {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        when(queueRepository.findById(1L)).thenReturn(Optional.of(mockQueue));
+        when(tenantAccessService.requireOwnedQueue(1L)).thenReturn(mockQueue);
         when(jobRepository.save(any(Job.class))).thenReturn(savedJob);
 
-        // Act
         JobResponse response = jobService.create(request);
 
-        // Assert
         assertNotNull(response);
         assertEquals(JobStatus.QUEUED, response.getStatus());
         assertEquals("EMAIL", response.getJobType());
@@ -93,30 +96,41 @@ class JobServiceUnitTest {
 
     @Test
     void shouldThrowExceptionWhenQueueNotFound() {
-        // Arrange
         CreateJobRequest request = new CreateJobRequest();
         request.setQueueId(999L);
         request.setJobType("EMAIL");
 
-        when(queueRepository.findById(999L)).thenReturn(Optional.empty());
+        when(tenantAccessService.requireOwnedQueue(999L))
+                .thenThrow(new ResourceNotFoundException("Queue not found"));
 
-        // Act + Assert
         assertThrows(ResourceNotFoundException.class,
                 () -> jobService.create(request));
         verify(jobRepository, never()).save(any());
     }
 
     @Test
+    void shouldRejectJobForQueueOwnedByAnotherUser() {
+        CreateJobRequest request = new CreateJobRequest();
+        request.setQueueId(1L);
+        request.setJobType("EMAIL");
+
+        when(tenantAccessService.requireOwnedQueue(1L))
+                .thenThrow(new ForbiddenException("Access denied"));
+
+        assertThrows(ForbiddenException.class,
+                () -> jobService.create(request));
+        verify(jobRepository, never()).save(any());
+    }
+
+    @Test
     void shouldThrowExceptionWhenQueueIsPaused() {
-        // Arrange
         mockQueue.setStatus(QueueStatus.PAUSED);
         CreateJobRequest request = new CreateJobRequest();
         request.setQueueId(1L);
         request.setJobType("EMAIL");
 
-        when(queueRepository.findById(1L)).thenReturn(Optional.of(mockQueue));
+        when(tenantAccessService.requireOwnedQueue(1L)).thenReturn(mockQueue);
 
-        // Act + Assert
         assertThrows(RuntimeException.class,
                 () -> jobService.create(request));
         verify(jobRepository, never()).save(any());
@@ -124,7 +138,6 @@ class JobServiceUnitTest {
 
     @Test
     void shouldReturnExistingJobWhenIdempotencyKeyMatches() {
-        // Arrange
         CreateJobRequest request = new CreateJobRequest();
         request.setQueueId(1L);
         request.setJobType("EMAIL");
@@ -142,22 +155,54 @@ class JobServiceUnitTest {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        when(queueRepository.findById(1L)).thenReturn(Optional.of(mockQueue));
+        when(tenantAccessService.requireOwnedQueue(1L)).thenReturn(mockQueue);
         when(jobRepository.findByIdempotencyKey("unique-key-abc"))
                 .thenReturn(Optional.of(existingJob));
 
-        // Act
         JobResponse response = jobService.create(request);
 
-        // Assert — returns existing job, never saves a new one
+        // returns the existing job, never saves a new one
         assertEquals(42L, response.getId());
         assertEquals(JobStatus.COMPLETED, response.getStatus());
         verify(jobRepository, never()).save(any());
     }
 
     @Test
+    void shouldReturnWinnerWhenIdempotencyRaceHappens() {
+        CreateJobRequest request = new CreateJobRequest();
+        request.setQueueId(1L);
+        request.setJobType("EMAIL");
+        request.setIdempotencyKey("race-key");
+
+        Job winner = Job.builder()
+                .id(77L)
+                .queue(mockQueue)
+                .jobType("EMAIL")
+                .status(JobStatus.QUEUED)
+                .priority(5)
+                .retryCount(0)
+                .maxRetries(3)
+                .idempotencyKey("race-key")
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        when(tenantAccessService.requireOwnedQueue(1L)).thenReturn(mockQueue);
+        // first lookup: nobody has this key yet; after the failed insert: the winner exists
+        when(jobRepository.findByIdempotencyKey("race-key"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(winner));
+        when(jobRepository.save(any(Job.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        JobResponse response = jobService.create(request);
+
+        assertEquals(77L, response.getId());
+    }
+
+    @Test
     void shouldThrowWhenJobNotFound() {
-        when(jobRepository.findById(999L)).thenReturn(Optional.empty());
+        when(tenantAccessService.requireOwnedJob(999L))
+                .thenThrow(new ResourceNotFoundException("Job not found"));
 
         assertThrows(ResourceNotFoundException.class,
                 () -> jobService.getById(999L));
@@ -175,10 +220,45 @@ class JobServiceUnitTest {
                 .maxRetries(3)
                 .build();
 
-        when(jobRepository.findById(1L)).thenReturn(Optional.of(runningJob));
+        when(tenantAccessService.requireOwnedJob(1L)).thenReturn(runningJob);
 
         assertThrows(RuntimeException.class,
                 () -> jobService.cancel(1L));
         verify(jobRepository, never()).save(any());
+    }
+
+    @Test
+    void shouldNotCancelAnotherUsersJob() {
+        when(tenantAccessService.requireOwnedJob(1L))
+                .thenThrow(new ForbiddenException("Access denied"));
+
+        assertThrows(ForbiddenException.class,
+                () -> jobService.cancel(1L));
+        verify(jobRepository, never()).save(any());
+    }
+
+    @Test
+    void shouldListOnlyCurrentUsersJobsByStatus() {
+        Job job = Job.builder()
+                .id(5L)
+                .queue(mockQueue)
+                .status(JobStatus.QUEUED)
+                .jobType("EMAIL")
+                .priority(5)
+                .retryCount(0)
+                .maxRetries(3)
+                .build();
+        Pageable pageable = PageRequest.of(0, 20);
+
+        when(tenantAccessService.currentUserId()).thenReturn(7L);
+        when(jobRepository.findByStatusForUser(JobStatus.QUEUED, 7L, pageable))
+                .thenReturn(new PageImpl<>(List.of(job)));
+
+        Page<JobResponse> page = jobService.getByStatusPaged(JobStatus.QUEUED, pageable);
+
+        assertEquals(1, page.getTotalElements());
+        assertEquals(5L, page.getContent().get(0).getId());
+        // the unfiltered query must never be used
+        verify(jobRepository, never()).findByStatus(any(JobStatus.class), any(Pageable.class));
     }
 }
