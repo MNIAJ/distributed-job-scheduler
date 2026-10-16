@@ -1,6 +1,5 @@
 package com.placements.job_scheduler.service;
 
-import com.placements.job_scheduler.entity.Job;
 import com.placements.job_scheduler.entity.Worker;
 import com.placements.job_scheduler.entity.WorkerHeartbeat;
 import com.placements.job_scheduler.enums.JobStatus;
@@ -10,10 +9,8 @@ import com.placements.job_scheduler.repository.WorkerHeartbeatRepository;
 import com.placements.job_scheduler.repository.WorkerRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -23,64 +20,61 @@ import java.util.List;
 @Slf4j
 public class HeartbeatService {
 
+    private static final int STALE_AFTER_MINUTES = 2;
+
     private final WorkerRepository workerRepository;
     private final JobRepository jobRepository;
-    @Autowired
-    private WorkerHeartbeatRepository heartbeatRepository;
+    private final WorkerHeartbeatRepository heartbeatRepository;
+    private final WorkerRegistry workerRegistry;
+    private final JobEventPublisher jobEventPublisher;
 
+    // Each instance reports ONLY for its own workers ("I am alive")
     @Scheduled(fixedDelay = 30000)
-    @Transactional
     public void updateHeartbeats() {
-        List<Worker> activeWorkers = workerRepository
-                .findByStatusNot(WorkerStatus.DEAD);
+        String instanceId = workerRegistry.getInstanceId();
+        LocalDateTime now = LocalDateTime.now();
 
-        activeWorkers.forEach(worker -> {
-            worker.setLastHeartbeatAt(LocalDateTime.now());
-            workerRepository.save(worker);
+        // One UPDATE statement: never overwrites a worker's status
+        workerRepository.touchHeartbeats(instanceId, now, WorkerStatus.DEAD);
 
-            // Save heartbeat record to history table
-            WorkerHeartbeat heartbeat = WorkerHeartbeat.builder()
+        // History rows (for the dashboard)
+        List<Worker> myWorkers = workerRepository
+                .findByInstanceIdAndStatusNot(instanceId, WorkerStatus.DEAD);
+        for (Worker worker : myWorkers) {
+            heartbeatRepository.save(WorkerHeartbeat.builder()
                     .worker(worker)
                     .status(worker.getStatus())
-                    .recordedAt(LocalDateTime.now())
-                    .build();
-            heartbeatRepository.save(heartbeat);
-        });
+                    .recordedAt(now)
+                    .build());
+        }
     }
 
-    // Check for dead workers every 60 seconds
+    // ANY instance can run this: it looks at ALL workers, so if one instance
+    // dies, a surviving instance recovers its jobs.
     @Scheduled(fixedDelay = 60000)
-    @Transactional
-    public void detectStuckJobs() {
-        // A worker is considered dead if no heartbeat for 2 minutes
-        LocalDateTime staleThreshold = LocalDateTime.now().minusMinutes(2);
+    public void detectDeadWorkers() {
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(STALE_AFTER_MINUTES);
 
-        List<Worker> deadWorkers = workerRepository
-                .findByLastHeartbeatAtBeforeAndStatus(
-                        staleThreshold, WorkerStatus.BUSY);
+        List<Worker> staleWorkers = workerRepository
+                .findByLastHeartbeatAtBeforeAndStatusNot(threshold, WorkerStatus.DEAD);
 
-        for (Worker deadWorker : deadWorkers) {
-            log.warn("Dead worker detected: [{}]. Recovering stuck jobs.",
-                    deadWorker.getName());
+        for (Worker worker : staleWorkers) {
+            log.warn("Dead worker detected: [{}]. Recovering its jobs.", worker.getName());
 
-            // Find all jobs this dead worker was running
-            List<Job> stuckJobs = jobRepository
-                    .findByClaimedByAndStatus(deadWorker, JobStatus.RUNNING);
+            // One atomic UPDATE: RUNNING jobs of this worker go back to QUEUED
+            int requeued = jobRepository.requeueRunningJobsOfWorker(
+                    worker.getId(), LocalDateTime.now(),
+                    JobStatus.QUEUED, JobStatus.RUNNING);
 
-            for (Job job : stuckJobs) {
-                // Reset to QUEUED so another worker picks it up
-                job.setStatus(JobStatus.QUEUED);
-                job.setClaimedBy(null);
-                job.setClaimedAt(null);
-                job.setNextRunAt(LocalDateTime.now());
-                jobRepository.save(job);
-                log.info("Recovered stuck job [{}] from dead worker [{}]",
-                        job.getId(), deadWorker.getName());
+            workerRepository.updateStatus(worker.getId(), WorkerStatus.DEAD);
+
+            if (requeued > 0) {
+                log.info("Recovered {} job(s) from dead worker [{}]",
+                        requeued, worker.getName());
             }
 
-            // Mark worker as dead
-            deadWorker.setStatus(WorkerStatus.DEAD);
-            workerRepository.save(deadWorker);
+            worker.setStatus(WorkerStatus.DEAD);
+            jobEventPublisher.publishWorkerUpdate(worker);
         }
     }
 }
