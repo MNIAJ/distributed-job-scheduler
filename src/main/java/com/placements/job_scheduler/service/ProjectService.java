@@ -4,6 +4,7 @@ import com.placements.job_scheduler.dto.request.CreateProjectRequest;
 import com.placements.job_scheduler.dto.response.ProjectResponse;
 import com.placements.job_scheduler.entity.Project;
 import com.placements.job_scheduler.entity.User;
+import com.placements.job_scheduler.exception.ForbiddenException;
 import com.placements.job_scheduler.exception.ResourceNotFoundException;
 import com.placements.job_scheduler.repository.ProjectRepository;
 import com.placements.job_scheduler.security.CurrentUserProvider;
@@ -65,7 +66,7 @@ public class ProjectService {
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
 
         if (!project.getUser().getId().equals(user.getId())) {
-            throw new RuntimeException("Access denied");
+            throw new ForbiddenException("Access denied");
         }
         return project;
     }

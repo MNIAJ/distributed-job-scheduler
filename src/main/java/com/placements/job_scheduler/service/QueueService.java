@@ -6,6 +6,7 @@ import com.placements.job_scheduler.entity.Project;
 import com.placements.job_scheduler.entity.Queue;
 import com.placements.job_scheduler.entity.User;
 import com.placements.job_scheduler.enums.QueueStatus;
+import com.placements.job_scheduler.exception.ForbiddenException;
 import com.placements.job_scheduler.exception.ResourceNotFoundException;
 import com.placements.job_scheduler.repository.ProjectRepository;
 import com.placements.job_scheduler.repository.QueueRepository;
@@ -80,7 +81,7 @@ public class QueueService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         if (!project.getUser().getId().equals(user.getId())) {
-            throw new RuntimeException("Access denied");
+            throw new ForbiddenException("Access denied");
         }
         return project;
     }
@@ -90,7 +91,7 @@ public class QueueService {
         Queue queue = queueRepository.findById(queueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Queue not found"));
         if (!queue.getProject().getUser().getId().equals(user.getId())) {
-            throw new RuntimeException("Access denied");
+            throw new ForbiddenException("Access denied");
         }
         return queue;
     }
