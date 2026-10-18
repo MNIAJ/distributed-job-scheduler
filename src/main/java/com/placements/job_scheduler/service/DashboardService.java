@@ -22,27 +22,29 @@ public class DashboardService {
     private final WorkerRepository workerRepository;
     private final QueueRepository queueRepository;
     private final DeadLetterQueueRepository dlqRepository;
+    private final TenantAccessService tenantAccessService;
 
     public DashboardResponse getStats() {
-        // Job counts by status
-        long total = jobRepository.count();
-        long queued = jobRepository.countByStatus(JobStatus.QUEUED);
-        long running = jobRepository.countByStatus(JobStatus.RUNNING);
-        long completed = jobRepository.countByStatus(JobStatus.COMPLETED);
-        long failed = jobRepository.countByStatus(JobStatus.FAILED);
-        long dead = jobRepository.countByStatus(JobStatus.DEAD);
+        Long userId = tenantAccessService.currentUserId();
 
-        // Worker counts
+        // Job counts: only the current user's jobs
+        long total = jobRepository.countAllForUser(userId);
+        long queued = jobRepository.countByStatusForUser(JobStatus.QUEUED, userId);
+        long running = jobRepository.countByStatusForUser(JobStatus.RUNNING, userId);
+        long completed = jobRepository.countByStatusForUser(JobStatus.COMPLETED, userId);
+        long failed = jobRepository.countByStatusForUser(JobStatus.FAILED, userId);
+        long dead = jobRepository.countByStatusForUser(JobStatus.DEAD, userId);
+
+        // Workers are shared infrastructure, so these stay system-wide
         long totalWorkers = workerRepository.count();
         long idle = workerRepository.countByStatus(WorkerStatus.IDLE);
         long busy = workerRepository.countByStatus(WorkerStatus.BUSY);
         long deadWorkers = workerRepository.countByStatus(WorkerStatus.DEAD);
 
-        // DLQ count
-        long dlqCount = dlqRepository.count();
+        long dlqCount = dlqRepository.countForUser(userId);
 
-        // Per-queue breakdown
-        List<QueueStatsResponse> queueStats = queueRepository.findAll()
+        // Per-queue breakdown: only this user's queues
+        List<QueueStatsResponse> queueStats = queueRepository.findByProjectUserId(userId)
                 .stream()
                 .map(q -> new QueueStatsResponse(
                         q.getId(),
