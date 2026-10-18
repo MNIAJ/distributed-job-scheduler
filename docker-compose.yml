@@ -40,6 +40,11 @@ services:
 
       SERVER_PORT: ${SERVER_PORT}
 
+      # Stable worker identity: without it the container hostname changes on every
+      # recreate and each deploy leaves a new set of DEAD workers behind.
+      WORKER_INSTANCE_ID: ${WORKER_INSTANCE_ID:-job-scheduler-app}
+      WORKER_COUNT: ${WORKER_COUNT:-3}
+
     depends_on:
       postgres:
         condition: service_healthy
