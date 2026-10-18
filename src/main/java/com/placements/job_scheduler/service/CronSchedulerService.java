@@ -1,6 +1,7 @@
 package com.placements.job_scheduler.service;
 
 import com.placements.job_scheduler.dto.request.CreateScheduledJobRequest;
+import com.placements.job_scheduler.dto.response.ScheduledJobResponse;
 import com.placements.job_scheduler.entity.Job;
 import com.placements.job_scheduler.entity.Queue;
 import com.placements.job_scheduler.entity.ScheduledJob;
@@ -69,7 +70,8 @@ public class CronSchedulerService {
                 .toLocalDateTime();
     }
 
-    public ScheduledJob create(CreateScheduledJobRequest request) {
+    @Transactional
+    public ScheduledJobResponse create(CreateScheduledJobRequest request) {
         // 404 if the queue does not exist, 403 if it belongs to someone else
         Queue queue = tenantAccessService.requireOwnedQueue(request.getQueueId());
 
@@ -85,12 +87,20 @@ public class CronSchedulerService {
                 .isActive(true)
                 .build();
 
-        return scheduledJobRepository.save(scheduledJob);
+        return toResponse(scheduledJobRepository.save(scheduledJob));
     }
 
     // Only this user's schedules
-    public List<ScheduledJob> getAllForCurrentUser() {
-        return scheduledJobRepository.findAllForUser(tenantAccessService.currentUserId());
+    @Transactional(readOnly = true)
+    public List<ScheduledJobResponse> getAllForCurrentUser() {
+        return scheduledJobRepository.findAllForUser(tenantAccessService.currentUserId())
+                .stream().map(this::toResponse).toList();
+    }
+
+    private ScheduledJobResponse toResponse(ScheduledJob s) {
+        return new ScheduledJobResponse(s.getId(), s.getQueue().getId(), s.getJobType(),
+                s.getPayload(), s.getCronExpression(), s.getPriority(), s.getIsActive(),
+                s.getNextRunAt(), s.getLastRunAt(), s.getCreatedAt());
     }
 
     @Transactional
