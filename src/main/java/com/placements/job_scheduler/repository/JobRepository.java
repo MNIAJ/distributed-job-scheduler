@@ -81,6 +81,28 @@ public interface JobRepository extends JpaRepository<Job, Long> {
                                   @Param("userId") Long userId,
                                   Pageable pageable);
 
+    // Dashboard counts, only for jobs of this user's queues
+    @Query("select count(j) from Job j where j.queue.project.user.id = :userId")
+    long countAllForUser(@Param("userId") Long userId);
+
+    @Query("select count(j) from Job j where j.status = :status " +
+            "and j.queue.project.user.id = :userId")
+    long countByStatusForUser(@Param("status") JobStatus status,
+                              @Param("userId") Long userId);
+
+    // Owner of a job (used to route WebSocket events to the right user)
+    @Query("select j.queue.project.user.id from Job j where j.id = :id")
+    Optional<Long> findOwnerIdByJobId(@Param("id") Long id);
+
+    // Atomic cancel: only succeeds if the job is still QUEUED at this instant,
+    // so a worker that claims it first always wins.
+    @Modifying(clearAutomatically = true)
+    @Transactional
+    @Query("update Job j set j.status = :dead where j.id = :id and j.status = :queued")
+    int cancelIfQueued(@Param("id") Long id,
+                       @Param("dead") JobStatus dead,
+                       @Param("queued") JobStatus queued);
+
     // Jobs a worker is running, only those owned by this user
     @Query("select j from Job j where j.claimedBy.id = :workerId " +
             "and j.status = :status and j.queue.project.user.id = :userId")
