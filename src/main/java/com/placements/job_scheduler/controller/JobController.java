@@ -3,8 +3,8 @@ package com.placements.job_scheduler.controller;
 import com.placements.job_scheduler.dto.request.CreateJobRequest;
 import com.placements.job_scheduler.dto.request.CreateScheduledJobRequest;
 import com.placements.job_scheduler.dto.response.JobResponse;
-import com.placements.job_scheduler.entity.JobLog;
-import com.placements.job_scheduler.entity.ScheduledJob;
+import com.placements.job_scheduler.dto.response.JobLogResponse;
+import com.placements.job_scheduler.dto.response.ScheduledJobResponse;
 import com.placements.job_scheduler.enums.JobStatus;
 import com.placements.job_scheduler.service.CronSchedulerService;
 import com.placements.job_scheduler.service.JobService;
@@ -30,13 +30,13 @@ public class JobController {
     private final CronSchedulerService cronSchedulerService;
 
     @PostMapping("/scheduled")
-    public ResponseEntity<ScheduledJob> createScheduled(
+    public ResponseEntity<ScheduledJobResponse> createScheduled(
             @Valid @RequestBody CreateScheduledJobRequest request) {
         return ResponseEntity.ok(cronSchedulerService.create(request));
     }
 
     @GetMapping("/scheduled")
-    public ResponseEntity<List<ScheduledJob>> getAllScheduled() {
+    public ResponseEntity<List<ScheduledJobResponse>> getAllScheduled() {
         return ResponseEntity.ok(cronSchedulerService.getAllForCurrentUser());
     }
 
@@ -49,7 +49,7 @@ public class JobController {
     }
 
     @GetMapping("/{id}/logs")
-    public ResponseEntity<List<JobLog>> getJobLogs(@PathVariable Long id) {
+    public ResponseEntity<List<JobLogResponse>> getJobLogs(@PathVariable Long id) {
         return ResponseEntity.ok(jobService.getLogs(id));
     }
 
