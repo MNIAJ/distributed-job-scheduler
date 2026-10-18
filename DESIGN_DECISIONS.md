@@ -1,6 +1,6 @@
 # Design Decisions
 
-Eight major trade-offs made during the design of this system, with the reasoning behind each.
+Nine major trade-offs made during the design of this system, with the reasoning behind each.
 
 ---
 
@@ -16,7 +16,7 @@ Eight major trade-offs made during the design of this system, with the reasoning
 
 ## 2. Database polling over message queues
 
-**Decision:** Workers poll PostgreSQL every 5 seconds rather than using Kafka, RabbitMQ, or Redis.
+**Decision:** Workers poll PostgreSQL every 2 seconds rather than using Kafka, RabbitMQ, or Redis.
 
 **Reasons:**
 - Zero additional infrastructure — no message broker to deploy, monitor, or operate
@@ -42,13 +42,13 @@ Eight major trade-offs made during the design of this system, with the reasoning
 
 ## 4. Workers as threads in one JVM, not separate services
 
-**Decision:** Three worker threads inside the same Spring Boot application, not separate deployable services.
+**Decision:** Worker threads (`worker.count`, default 3) run inside the Spring Boot application, not as separate deployable services. Each app instance registers its own workers under a unique `instance_id`.
 
 **Reason:** The concurrency guarantee comes from the database locking, not from network topology. Whether workers are threads in one JVM or processes across ten machines, `FOR UPDATE SKIP LOCKED` works identically — the database is the coordination point.
 
 This demonstrates the distributed systems concept correctly while keeping deployment simple.
 
-**Production path:** To scale out, extract `WorkerService` into a separate Spring Boot app pointing at the same database. The locking logic is unchanged — you just have more pollers.
+**Scaling out:** Run more instances of the same app against the same database, each with its own `WORKER_INSTANCE_ID`. The locking logic is unchanged — you just have more pollers, and any live instance recovers the jobs of a crashed one through heartbeat checks.
 
 ---
 
@@ -82,10 +82,10 @@ This demonstrates the distributed systems concept correctly while keeping deploy
 
 ## 8. Dead Letter Queue as a separate table
 
-**Decision:** Permanently failed jobs moved to a `dead_letter_queue` table rather than left in `jobs` with status DEAD.
+**Decision:** Permanently failed jobs get an entry in a `dead_letter_queue` table. The original `jobs` row is kept with status DEAD as a tombstone that the DLQ entry references; all failure details live in the DLQ.
 
 **Reasons:**
-- Keeps the `jobs` table focused on active work — no permanently dead rows clogging queries
+- Failure details stay out of the hot `jobs` table, and the claim query never touches DEAD rows
 - DLQ entries carry extra metadata: `failure_reason`, `moved_at`, `total_attempts`
 - Enables separate monitoring, alerting, and manual retry workflows
 - A job in the DLQ is a different concept from a job that failed — it deserves its own home
