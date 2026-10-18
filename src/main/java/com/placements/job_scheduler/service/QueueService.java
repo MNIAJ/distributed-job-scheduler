@@ -40,8 +40,8 @@ public class QueueService {
 
         // Link retry policy if provided
         if (request.getRetryPolicyId() != null) {
-            retryPolicyRepository.findById(request.getRetryPolicyId())
-                    .ifPresent(queue::setRetryPolicy);
+            queue.setRetryPolicy(retryPolicyRepository.findById(request.getRetryPolicyId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Retry policy not found")));
         }
 
         return toResponse(queueRepository.save(queue));
