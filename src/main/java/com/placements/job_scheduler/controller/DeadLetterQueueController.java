@@ -1,6 +1,6 @@
 package com.placements.job_scheduler.controller;
 
-import com.placements.job_scheduler.entity.DeadLetterQueue;
+import com.placements.job_scheduler.dto.response.DlqEntryResponse;
 import com.placements.job_scheduler.service.DeadLetterQueueService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,7 +21,7 @@ public class DeadLetterQueueController {
     private final DeadLetterQueueService dlqService;
 
     @GetMapping
-    public ResponseEntity<List<DeadLetterQueue>> getAll() {
+    public ResponseEntity<List<DlqEntryResponse>> getAll() {
         return ResponseEntity.ok(dlqService.getAllForCurrentUser());
     }
 
