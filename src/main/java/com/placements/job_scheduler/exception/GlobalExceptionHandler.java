@@ -1,5 +1,6 @@
 package com.placements.job_scheduler.exception;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -32,6 +33,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
                 .body(Map.of("error", ex.getMessage()));
+    }
+
+    // e.g. deleting a queue or project that still has jobs
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, String>> handleIntegrity(DataIntegrityViolationException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(Map.of("error",
+                        "Operation conflicts with existing data (the resource may still be in use)"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
