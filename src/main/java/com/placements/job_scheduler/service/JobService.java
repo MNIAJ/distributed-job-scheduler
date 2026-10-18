@@ -3,6 +3,7 @@ package com.placements.job_scheduler.service;
 import com.placements.job_scheduler.dto.request.CreateJobRequest;
 import com.placements.job_scheduler.dto.response.JobResponse;
 import com.placements.job_scheduler.entity.Job;
+import com.placements.job_scheduler.dto.response.JobLogResponse;
 import com.placements.job_scheduler.entity.JobLog;
 import com.placements.job_scheduler.entity.Queue;
 import com.placements.job_scheduler.enums.JobStatus;
@@ -16,6 +17,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -114,17 +116,32 @@ public class JobService {
     public JobResponse cancel(Long id) {
         Job job = tenantAccessService.requireOwnedJob(id);
 
-        if (job.getStatus() == JobStatus.RUNNING) {
-            throw new RuntimeException("Cannot cancel a running job");
+        if (job.getStatus() != JobStatus.QUEUED) {
+            throw new RuntimeException(
+                    "Only queued jobs can be cancelled (job is " + job.getStatus() + ")");
+        }
+
+        // Atomic: if a worker claims the job right now, this matches no row
+        if (jobRepository.cancelIfQueued(id, JobStatus.DEAD, JobStatus.QUEUED) == 0) {
+            throw new RuntimeException("Job was claimed by a worker and can no longer be cancelled");
         }
 
         job.setStatus(JobStatus.DEAD);
-        return toResponse(jobRepository.save(job));
+        return toResponse(job);
     }
 
-    public List<JobLog> getLogs(Long jobId) {
+    @Transactional(readOnly = true)
+    public List<JobLogResponse> getLogs(Long jobId) {
         tenantAccessService.requireOwnedJob(jobId);
-        return jobLogRepository.findByJobIdOrderByCreatedAtAsc(jobId);
+        return jobLogRepository.findByJobIdOrderByCreatedAtAsc(jobId)
+                .stream().map(this::toLogResponse).collect(Collectors.toList());
+    }
+
+    private JobLogResponse toLogResponse(JobLog l) {
+        return new JobLogResponse(l.getId(), l.getJob().getId(),
+                l.getWorker() != null ? l.getWorker().getId() : null,
+                l.getWorker() != null ? l.getWorker().getName() : null,
+                l.getMessage(), l.getLogLevel(), l.getCreatedAt());
     }
 
     // Workers are shared infrastructure, but the jobs they run belong to tenants
