@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface QueueRepository extends JpaRepository<Queue, Long> {
     List<Queue> findByProjectId(Long projectId);
+    List<Queue> findByProjectUserId(Long userId);
 }
