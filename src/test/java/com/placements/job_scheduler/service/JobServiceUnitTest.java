@@ -228,6 +228,38 @@ class JobServiceUnitTest {
     }
 
     @Test
+    void shouldNotCancelCompletedJob() {
+        Job done = Job.builder().id(2L).queue(mockQueue).status(JobStatus.COMPLETED)
+                .jobType("EMAIL").priority(5).retryCount(0).maxRetries(3).build();
+        when(tenantAccessService.requireOwnedJob(2L)).thenReturn(done);
+
+        assertThrows(RuntimeException.class, () -> jobService.cancel(2L));
+        verify(jobRepository, never()).cancelIfQueued(any(), any(), any());
+    }
+
+    @Test
+    void shouldCancelQueuedJob() {
+        Job queued = Job.builder().id(3L).queue(mockQueue).status(JobStatus.QUEUED)
+                .jobType("EMAIL").priority(5).retryCount(0).maxRetries(3).build();
+        when(tenantAccessService.requireOwnedJob(3L)).thenReturn(queued);
+        when(jobRepository.cancelIfQueued(3L, JobStatus.DEAD, JobStatus.QUEUED)).thenReturn(1);
+
+        JobResponse response = jobService.cancel(3L);
+
+        assertEquals(JobStatus.DEAD, response.getStatus());
+    }
+
+    @Test
+    void shouldNotCancelJobClaimedByWorkerMeanwhile() {
+        Job queued = Job.builder().id(4L).queue(mockQueue).status(JobStatus.QUEUED)
+                .jobType("EMAIL").priority(5).retryCount(0).maxRetries(3).build();
+        when(tenantAccessService.requireOwnedJob(4L)).thenReturn(queued);
+        when(jobRepository.cancelIfQueued(4L, JobStatus.DEAD, JobStatus.QUEUED)).thenReturn(0);
+
+        assertThrows(RuntimeException.class, () -> jobService.cancel(4L));
+    }
+
+    @Test
     void shouldNotCancelAnotherUsersJob() {
         when(tenantAccessService.requireOwnedJob(1L))
                 .thenThrow(new ForbiddenException("Access denied"));
