@@ -656,11 +656,11 @@
 
         stompClient.debug = null; // silence debug logs
 
-        stompClient.connect({}, function(frame) {
+        stompClient.connect({ Authorization: 'Bearer ' + token }, function(frame) {
             console.log('WebSocket connected');
 
             // Listen for job updates
-            stompClient.subscribe('/topic/jobs', function(message) {
+            stompClient.subscribe('/user/queue/jobs', function(message) {
                 const event = JSON.parse(message.body);
                 showLiveToast(`Job #${event.jobId} → ${event.status}`);
                 // Refresh current page data
@@ -677,7 +677,7 @@
 
         }, function(error) {
             console.log('WebSocket disconnected, retrying in 5s...');
-            setTimeout(connectWebSocket, 5000);
+            if (token) setTimeout(connectWebSocket, 5000);
         });
     }
 
